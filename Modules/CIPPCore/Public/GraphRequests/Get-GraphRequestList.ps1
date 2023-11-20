@@ -91,7 +91,7 @@ function Get-GraphRequestList {
     if ($QueueId) {
         $Table = Get-CIPPTable -TableName $TableName
         $Filter = "QueueId eq '{0}'" -f $QueueId
-        $Rows = Get-AzDataTableEntity @Table -Filter $Filter
+        $Rows = Get-CIPPAzDataTableEntity @Table -Filter $Filter
         $Type = 'Queue'
     } elseif ($TenantFilter -eq 'AllTenants' -or (!$SkipCache.IsPresent -and !$ClearCache.IsPresent -and !$CountOnly.IsPresent)) {
         $Table = Get-CIPPTable -TableName $TableName
@@ -101,7 +101,7 @@ function Get-GraphRequestList {
             $Filter = "PartitionKey eq '{0}' and Tenant eq '{1}'" -f $PartitionKey, $TenantFilter
         }
         #Write-Host $Filter
-        $Rows = Get-AzDataTableEntity @Table -Filter $Filter | Where-Object { $_.Timestamp.DateTime -gt (Get-Date).ToUniversalTime().AddHours(-1) }
+        $Rows = Get-CIPPAzDataTableEntity @Table -Filter $Filter | Where-Object { $_.Timestamp.DateTime -gt (Get-Date).ToUniversalTime().AddHours(-1) }
         $Type = 'Cache'
     } else {
         $Type = 'None'
@@ -157,7 +157,8 @@ function Get-GraphRequestList {
                         try {
                             Get-Tenants -IncludeErrors | ForEach-Object {
                                 $TenantFilter = $_.defaultDomainName
-                                $QueueTenant = @{
+                                $QueueTenant = [PSCustomObject]@{
+                                    FunctionName                = 'ListGraphRequestQueue'
                                     TenantFilter                = $TenantFilter
                                     Endpoint                    = $Endpoint
                                     QueueId                     = $Queue.RowKey
@@ -169,7 +170,7 @@ function Get-GraphRequestList {
                                     NoAuthCheck                 = $NoAuthCheck.IsPresent
                                     ReverseTenantLookupProperty = $ReverseTenantLookupProperty
                                     ReverseTenantLookup         = $ReverseTenantLookup.IsPresent
-                                } | ConvertTo-Json -Depth 5 -Compress
+                                }
 
                                 Push-OutputBinding -Name QueueItem -Value $QueueTenant
                             }
@@ -216,7 +217,8 @@ function Get-GraphRequestList {
                                 }
                             } else {
                                 $Queue = New-CippQueueEntry -Name $QueueName -Link $CippLink -Reference $QueueReference
-                                $QueueTenant = @{
+                                $QueueTenant = [PSCustomObject]@{
+                                    FunctionName                = 'ListGraphRequestQueue'
                                     TenantFilter                = $TenantFilter
                                     Endpoint                    = $Endpoint
                                     QueueId                     = $Queue.RowKey
@@ -227,9 +229,10 @@ function Get-GraphRequestList {
                                     NoAuthCheck                 = $NoAuthCheck.IsPresent
                                     ReverseTenantLookupProperty = $ReverseTenantLookupProperty
                                     ReverseTenantLookup         = $ReverseTenantLookup.IsPresent
-                                } | ConvertTo-Json -Depth 5 -Compress
+                                }
 
                                 Push-OutputBinding -Name QueueItem -Value $QueueTenant
+
                                 [PSCustomObject]@{
                                     QueueMessage = ('Loading {0} rows for {1}. Please check back after the job completes' -f $Count, $TenantFilter)
                                     QueueId      = $Queue.RowKey
