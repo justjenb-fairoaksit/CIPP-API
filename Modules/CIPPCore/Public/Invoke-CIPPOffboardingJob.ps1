@@ -13,6 +13,7 @@ function Invoke-CIPPOffboardingJob {
         $Options = $Options | ConvertFrom-Json
     }
     $userid = (New-GraphGetRequest -uri "https://graph.microsoft.com/beta/users/$($username)" -tenantid $Tenantfilter).id
+    Write-Host "Running offboarding job for $username with options: $($Options | ConvertTo-Json -Depth 10)"
     $Return = switch ($Options) {
         { $_.'ConvertToShared' -eq 'true' } {
             Set-CIPPMailboxType -ExecutingUser $ExecutingUser -tenantFilter $tenantFilter -userid $username -username $username -MailboxType 'Shared' -APIName $APIName
@@ -35,7 +36,7 @@ function Invoke-CIPPOffboardingJob {
         }
 
         { $_.'OnedriveAccess' -ne '' } { 
-            $Options.OnedriveAccess | ForEach-Object { Set-CIPPSharePointOwner -tenantFilter $tenantFilter -userid $username -OnedriveAccessUser $_.value -ExecutingUser $ExecutingUser -APIName $APIName }
+            $Options.OnedriveAccess | ForEach-Object { Set-CIPPSharePointPerms -tenantFilter $tenantFilter -userid $username -OnedriveAccessUser $_.value -ExecutingUser $ExecutingUser -APIName $APIName }
         }
 
         { $_.'AccessNoAutomap' -ne '' } { 
@@ -49,7 +50,11 @@ function Invoke-CIPPOffboardingJob {
             Set-CIPPOutOfOffice -tenantFilter $tenantFilter -userid $username -InternalMessage $Options.OOO -ExternalMessage $Options.OOO -ExecutingUser $ExecutingUser -APIName $APIName -state 'Enabled'
         }
         { $_.'forward' -ne '' } { 
-            Set-CIPPForwarding -userid $userid -username $username -tenantFilter $Tenantfilter -Forward $Options.forward -KeepCopy [bool]$Options.keepCopy -ExecutingUser $ExecutingUser -APIName $APIName
+            if (!$options.keepcopy) {
+                Set-CIPPForwarding -userid $userid -username $username -tenantFilter $Tenantfilter -Forward $Options.forward -ExecutingUser $ExecutingUser -APIName $APIName
+            } else {
+                Set-CIPPForwarding -userid $userid -username $username -tenantFilter $Tenantfilter -Forward $Options.forward -KeepCopy $Options.keepCopy -ExecutingUser $ExecutingUser -APIName $APIName
+            }
         }
         { $_.'RemoveLicenses' -eq 'true' } {
             Remove-CIPPLicense -userid $userid -username $Username -tenantFilter $Tenantfilter -ExecutingUser $ExecutingUser -APIName $APIName
@@ -59,14 +64,15 @@ function Invoke-CIPPOffboardingJob {
             Remove-CIPPUser -userid $userid -username $Username -tenantFilter $Tenantfilter -ExecutingUser $ExecutingUser -APIName $APIName
         }
 
-        { $_.'RemoveRules' -eq 'true' } {
+        { $_.'removeRules' -eq 'true' } {
+            Write-Host "Removing rules for $username"
             Remove-CIPPRules -userid $userid -username $Username -tenantFilter $Tenantfilter -ExecutingUser $ExecutingUser -APIName $APIName
         }
 
-        { $_.'RemoveMobile' -eq 'true' } {
+        { $_.'removeMobile' -eq 'true' } {
             Remove-CIPPMobileDevice -userid $userid -username $Username -tenantFilter $Tenantfilter -ExecutingUser $ExecutingUser -APIName $APIName
         }
-        { $_.'RemovePermissions' } {
+        { $_.'removePermissions' } {
             if ($RunScheduled) {
                 Remove-CIPPMailboxPermissions -PermissionsLevel @('FullAccess', 'SendAs', 'SendOnBehalf') -userid 'AllUsers' -AccessUser $UserName -TenantFilter $TenantFilter -APIName $APINAME -ExecutingUser $ExecutingUser
 

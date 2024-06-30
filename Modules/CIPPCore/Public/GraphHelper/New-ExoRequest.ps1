@@ -5,7 +5,8 @@ function New-ExoRequest ($tenantid, $cmdlet, $cmdParams, $useSystemMailbox, $Anc
     #>
     if ((Get-AuthorisedRequest -TenantID $tenantid) -or $NoAuthCheck -eq $True) {
         $token = Get-ClassicAPIToken -resource 'https://outlook.office365.com' -Tenantid $tenantid
-        $tenant = (get-tenants -IncludeErrors | Where-Object { $_.defaultDomainName -eq $tenantid -or $_.customerId -eq $tenantid }).customerId
+        $Tenant = Get-Tenants -IncludeErrors | Where-Object { $_.defaultDomainName -eq $tenantid -or $_.customerId -eq $tenantid }
+
         if ($cmdParams) {
             $Params = $cmdParams
         } else {
@@ -21,13 +22,24 @@ function New-ExoRequest ($tenantid, $cmdlet, $cmdParams, $useSystemMailbox, $Anc
             if ($cmdparams.Identity) { $Anchor = $cmdparams.Identity }
             if ($cmdparams.anr) { $Anchor = $cmdparams.anr }
             if ($cmdparams.User) { $Anchor = $cmdparams.User }
-
+            if ($cmdparams.mailbox) { $Anchor = $cmdparams.mailbox }
+            if ($cmdlet -eq 'Set-AdminAuditLogConfig') { $anchor = "UPN:SystemMailbox{8cc370d3-822a-4ab8-a926-bb94bd0641a9}@$($OnMicrosoft)" }
             if (!$Anchor -or $useSystemMailbox) {
-                $OnMicrosoft = (New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/domains?$top=999' -tenantid $tenantid -NoAuthCheck $NoAuthCheck | Where-Object -Property isInitial -EQ $true).id
-
-                $anchor = "UPN:SystemMailbox{8cc370d3-822a-4ab8-a926-bb94bd0641a9}@$($OnMicrosoft)"
-
-
+                if (!$Tenant.initialDomainName -or $Tenant.initialDomainName -notlike '*onmicrosoft.com*') {
+                    $OnMicrosoft = (New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/domains?$top=999' -tenantid $tenantid -NoAuthCheck $NoAuthCheck | Where-Object -Property isInitial -EQ $true).id
+                } else {
+                    $OnMicrosoft = $Tenant.initialDomainName
+                }
+                $anchor = "UPN:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($OnMicrosoft)"
+            }
+            #if the anchor is a GUID, try looking up the user.
+            if ($Anchor -match '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
+                $Anchor = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/users/$Anchor" -tenantid $tenantid -NoAuthCheck $NoAuthCheck
+                if ($Anchor) {
+                    $Anchor = $Anchor.UserPrincipalName
+                } else {
+                    Write-Error "Failed to find user with GUID $Anchor"
+                }
             }
         }
         Write-Host "Using $Anchor"
@@ -40,9 +52,9 @@ function New-ExoRequest ($tenantid, $cmdlet, $cmdParams, $useSystemMailbox, $Anc
         }
         try {
             if ($Select) { $Select = "`$select=$Select" }
-            $URL = "https://outlook.office365.com/adminapi/beta/$($tenant)/InvokeCommand?$Select"
-            
-            $ReturnedData = 
+            $URL = "https://outlook.office365.com/adminapi/beta/$($tenant.customerId)/InvokeCommand?$Select"
+
+            $ReturnedData =
             do {
                 $Return = Invoke-RestMethod $URL -Method POST -Body $ExoBody -Headers $Headers -ContentType 'application/json; charset=utf-8'
                 $URL = $Return.'@odata.nextLink'
