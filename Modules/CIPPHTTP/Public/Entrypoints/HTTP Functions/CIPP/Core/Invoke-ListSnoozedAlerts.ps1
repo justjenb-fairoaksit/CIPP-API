@@ -25,6 +25,11 @@ function Invoke-ListSnoozedAlerts {
             $SnoozeRecords = Get-CIPPAzDataTableEntity @SnoozeTable
         }
 
+        # AnyTenant skips the framework's per-tenant check, and snooze rows carry alert content
+        # previews. Narrow to the caller's allowed tenants (dropping estate-wide rows for
+        # restricted callers); unrestricted callers pass through untouched.
+        $SnoozeRecords = $SnoozeRecords | Select-CippAllowedTenantData -TenantProperty 'Tenant'
+
 
 
         $CurrentUnixTime = [int64](([datetime]::UtcNow) - (Get-Date '1/1/1970')).TotalSeconds
@@ -43,6 +48,7 @@ function Invoke-ListSnoozedAlerts {
                     Tenant         = $_.Tenant
                     ContentHash    = $_.ContentHash
                     ContentPreview = $_.ContentPreview
+                    SnoozeReason   = $_.SnoozeReason
                     SnoozedBy      = $_.SnoozedBy
                     SnoozedAt      = $_.SnoozedAt
                     SnoozeUntil    = $_.SnoozeUntil
