@@ -3,8 +3,8 @@ function Get-GradientToken {
         $Configuration
     )
     if ($Configuration.vendorKey) {
-        $null = Connect-AzAccount -Identity
-        $partnerApiKey = (Get-AzKeyVaultSecret -VaultName $ENV:WEBSITE_DEPLOYMENT_ID -Name 'Gradient' -AsPlainText)
+        $keyvaultname = Get-CippKeyVaultName
+        $partnerApiKey = (Get-CippKeyVaultSecret -VaultName $keyvaultname -Name 'Gradient' -AsPlainText)
         $authorizationToken = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$($configuration.vendorKey):$($partnerApiKey)"))
 
         $headers = [hashtable]@{
@@ -15,9 +15,9 @@ function Get-GradientToken {
         try {
             return [hashtable]$headers
         } catch {
-            Write-Error $_.Exception.Message
+            return $false
         }
-    } catch {
-        throw 'No Gradient configuration'
+    } else {
+        return $false
     }
 }

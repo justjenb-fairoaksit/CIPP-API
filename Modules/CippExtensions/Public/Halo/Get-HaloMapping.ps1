@@ -15,23 +15,37 @@ function Get-HaloMapping {
             IntegrationId   = $_.HaloPSA
             IntegrationName = $_.HaloPSAName
         }
-        Remove-AzDataTableEntity @CIPPMapping -Entity $_ | Out-Null
+        Remove-CIPPAzDataTableEntity -Force @CIPPMapping -Entity $_ | Out-Null
     }
     if (($MigrateRows | Measure-Object).Count -gt 0) {
         Add-CIPPAzDataTableEntity @CIPPMapping -Entity $MigrateRows -Force
     }
 
-    $Mappings = Get-ExtensionMapping -Extension 'Halo'
+    $ExtensionMappings = Get-ExtensionMapping -Extension 'Halo'
 
     $Tenants = Get-Tenants -IncludeErrors
+
+    $Mappings = foreach ($Mapping in $ExtensionMappings) {
+        $Tenant = $Tenants | Where-Object { $_.RowKey -eq $Mapping.RowKey }
+        if ($Tenant) {
+            [PSCustomObject]@{
+                TenantId        = $Tenant.customerId
+                Tenant          = $Tenant.displayName
+                TenantDomain    = $Tenant.defaultDomainName
+                IntegrationId   = $Mapping.IntegrationId
+                IntegrationName = $Mapping.IntegrationName
+            }
+        }
+    }
     $Table = Get-CIPPTable -TableName Extensionsconfig
     try {
         $Configuration = ((Get-CIPPAzDataTableEntity @Table).config | ConvertFrom-Json -ea stop).HaloPSA
 
         $Token = Get-HaloToken -configuration $Configuration
+        $UserAgent = Get-CippUserAgent
         $i = 1
         $RawHaloClients = do {
-            $Result = Invoke-RestMethod -Uri "$($Configuration.ResourceURL)/Client?page_no=$i&page_size=999&pageinate=true" -ContentType 'application/json' -Method GET -Headers @{Authorization = "Bearer $($token.access_token)" }
+            $Result = Invoke-RestMethod -UserAgent $UserAgent -Uri "$($Configuration.ResourceURL)/Client?page_no=$i&page_size=999&pageinate=true" -ContentType 'application/json' -Method GET -Headers @{Authorization = "Bearer $($token.access_token)" }
             $Result.clients | Select-Object * -ExcludeProperty logo
             $i++
             $pagecount = [Math]::Ceiling($Result.record_count / 999)
@@ -53,9 +67,8 @@ function Get-HaloMapping {
         }
     }
     $MappingObj = [PSCustomObject]@{
-        Tenants   = @($Tenants)
         Companies = @($HaloClients)
-        Mappings  = $Mappings
+        Mappings  = @($Mappings)
     }
 
     return $MappingObj
